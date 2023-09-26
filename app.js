@@ -67,9 +67,25 @@ const conObject2 = (dbObject) => {
     tweet: dbObject.tweet,
     likes: dbObject.likes,
     replies: dbObject.replies,
-    dateTime: dbObject.date_time,
+    dateTime: dbObject.dateTime,
   };
 };
+const l = [];
+function conObject3(dbObject, len) {
+  l.push(dbObject.username);
+  // console.log(l);
+  return l;
+}
+const l1 = [];
+function conObject4(dbObject, len) {
+  l1.push(dbObject.name);
+  l1.push(dbObject.reply);
+  // console.log(l);
+  return {
+    name: dbObject.name,
+    reply: dbObject.reply,
+  };
+}
 
 //Get API-1
 app.post("/register/", async (request, response) => {
@@ -107,13 +123,18 @@ app.post("/register/", async (request, response) => {
 //API-2
 app.post("/login/", authenticateToken, async (request, response) => {
   const { username, password } = request.body;
+  const hashedPassword = await bcrypt.hash(request.body.password, 10);
+
   const getA1 = `SELECT * from tweet natural join user where username='${username}';`;
   const dbUser = await db.get(getA1);
   if (dbUser === undefined) {
     response.status(400);
     response.send("Invalid user");
   } else {
-    const isPasswordMatched = await bcrypt.compare(password, dbUser.password);
+    const isPasswordMatched = await bcrypt.compare(
+      hashedPassword,
+      dbUser.password
+    );
     if (isPasswordMatched === true) {
       const payload = {
         username: username,
@@ -161,12 +182,120 @@ app.get("/user/followers/", authenticateToken, async (request, response) => {
 app.get("/tweets/:tweetId/", authenticateToken, async (request, response) => {
   const { tweetId } = request.params;
   const sel = `
-        SELECT * from tweet t,user u where tweet_id='${tweetId}' and u.user_id=t.user_id
+        SELECT 
+        tweet,
+        sum(like_id) as likes,
+        reply as replies,
+        date_time as dateTime
+        from tweet t,user u,reply r, like l where t.tweet_id='${tweetId}' and u.user_id=t.user_id
+        and t.tweet_id=r.tweet_id and r.tweet_id=l.tweet_id
         ;`;
-
+  if (sel === undefined) {
+    response.status(401);
+    response.send("Invalid Request");
+  }
   const arr = await db.all(sel);
-  const name = arr.name;
   // console.log({ name });
   response.send(arr.map((each) => conObject2(each)));
 });
+//API7
+app.get(
+  "/tweets/:tweetId/likes/",
+  authenticateToken,
+  async (request, response) => {
+    const { tweetId } = request.params;
+    const sel = `
+        SELECT 
+        username,
+       like_id as likes
+        from tweet t,user u, like l where t.tweet_id='${tweetId}' and u.user_id=t.user_id
+        and t.tweet_id=l.tweet_id 
+        ;`;
+    if (sel === undefined) {
+      response.status(401);
+      response.send("Invalid Request");
+    }
+    const arr = await db.all(sel);
+    // console.log({ name });
+    const len = arr.length;
+    const re = arr.map((each) => conObject3(each, len));
+    console.log(re[0]);
+
+    response.send({ likes: re[0] });
+  }
+);
+
+//API8
+app.get(
+  "/tweets/:tweetId/replies/",
+  authenticateToken,
+  async (request, response) => {
+    const { tweetId } = request.params;
+    const sel = `
+        SELECT 
+        *
+        from tweet t,user u, reply r where t.tweet_id='${tweetId}' and u.user_id=t.user_id
+        and t.tweet_id=r.tweet_id 
+        ;`;
+    if (sel === undefined) {
+      response.status(401);
+      response.send("Invalid Request");
+    }
+    const arr = await db.all(sel);
+    // console.log({ name });
+    const len = arr.length;
+    const re = arr.map((each) => conObject4(each, len));
+    // console.log(re[0]);
+
+    response.send({ replies: re });
+  }
+);
+
+// API-9
+app.get("/user/tweets/", authenticateToken, async (request, response) => {
+  //const { tweetId } = request.params;
+  const sel = `
+        SELECT 
+        tweet,
+        sum(like_id) as likes,
+        reply as replies,
+        date_time as dateTime
+        from tweet t,user u,reply r, like l where u.user_id=t.user_id
+        and t.tweet_id=r.tweet_id and r.tweet_id=l.tweet_id
+        ;`;
+  if (sel === undefined) {
+    response.status(401);
+    response.send("Invalid Request");
+  }
+  const arr = await db.all(sel);
+  // console.log({ name });
+  response.send(arr.map((each) => conObject2(each)));
+});
+//API10
+app.post("user/tweets/", authenticateToken, async (request, response) => {
+  const { tweet } = request.body;
+  const query = `insert into tweet set(tweet) values('${tweet}');`;
+  console.log(query);
+  const arr = await db.run(query);
+  console.log(arr);
+  response.send("Created a Tweet");
+});
+//API11
+app.delete(
+  "/tweets/:tweetId/",
+  authenticateToken,
+  async (request, response) => {
+    const { tweetId } = request.params;
+    const q = `delete from tweet where tweet_id='${tweetId}' and user_id=(select user_id from user) ;`;
+    //console.log(q);
+    if (q === undefined) {
+      response.status(401);
+      response.send("Invalid Request");
+    }
+    const arr = await db.run(q);
+    //console.log(arr);
+    response.send("Tweet Removed");
+  }
+);
+
 module.exports = app;
